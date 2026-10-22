@@ -173,10 +173,10 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
             title = "Edit category",
             initial = cat,
             onDismiss = { editCategory = false },
-            onSave = { name, color ->
+            onSave = { name, color, size ->
                 editCategory = false
                 scope.launch {
-                    repo.dao.updateCategory(cat.copy(name = name, color = color))
+                    repo.dao.updateCategory(cat.copy(name = name, color = color, tileSize = size))
                     reload++
                 }
             },

@@ -12,6 +12,8 @@ data class Category(
     /** Shown on the Android Auto grid. */
     val showInCar: Boolean = true,
     val sortOrder: Int = 0,
+    /** Phone grid tile size: 1 = small, 2 = medium, 3 = large (columns spanned). */
+    @ColumnInfo(defaultValue = "1") val tileSize: Int = 1,
 )
 
 @Entity(
@@ -79,14 +81,21 @@ interface PinDao {
     suspend fun deletePin(id: Long)
 }
 
-@Database(entities = [Category::class, Pin::class], version = 1, exportSchema = false)
+@Database(entities = [Category::class, Pin::class], version = 2, exportSchema = false)
 abstract class PinnrDb : RoomDatabase() {
     abstract fun dao(): PinDao
 
     companion object {
         @Volatile private var instance: PinnrDb? = null
+
+        private val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE categories ADD COLUMN tileSize INTEGER NOT NULL DEFAULT 1")
+            }
+        }
         fun get(context: Context): PinnrDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, PinnrDb::class.java, "pinnr.db")
+                .addMigrations(MIGRATION_1_2)
                 .build().also { instance = it }
         }
     }
