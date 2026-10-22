@@ -184,17 +184,14 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
     }
 
     if (confirmDelete && cat != null) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("Delete \"${cat.name}\"?") },
-            text = { Text("This also deletes its ${pins.size} pin(s). Export first if you want to keep them.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmDelete = false
-                    scope.launch { repo.dao.deleteCategory(cat); onBack() }
-                }) { Text("Delete") }
+        DeleteCategoryDialogs(
+            category = cat,
+            pinCount = pins.size,
+            onDismiss = { confirmDelete = false },
+            onConfirmed = {
+                confirmDelete = false
+                scope.launch { repo.dao.deleteCategory(cat); onBack() }
             },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
         )
     }
 }

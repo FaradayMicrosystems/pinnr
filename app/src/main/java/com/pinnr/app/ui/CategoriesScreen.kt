@@ -50,6 +50,7 @@ fun CategoriesScreen(
     val ctx = LocalContext.current
     var showAdd by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Category?>(null) }
+    var deleting by remember { mutableStateOf<CategoryWithCount?>(null) }
     var menu by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -103,7 +104,7 @@ fun CategoriesScreen(
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Text(
-                    "Tap to open · long-press to edit size and colour · car icon = shown in Android Auto",
+                    "Tap to open · hold for options · car icon = shown in Android Auto",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -117,6 +118,12 @@ fun CategoriesScreen(
                     cw = cw,
                     onOpen = { onOpen(cw.category.id) },
                     onEdit = { editing = cw.category },
+                    onExport = { f ->
+                        scope.launch {
+                            Exporter.share(ctx, cw.category.name, f, repo.dao.pinsForExport(cw.category.id), listOf(cw.category))
+                        }
+                    },
+                    onDelete = { deleting = cw },
                     onToggleCar = { on -> scope.launch { repo.dao.updateCategory(cw.category.copy(showInCar = on)) } },
                 )
             }
@@ -136,6 +143,17 @@ fun CategoriesScreen(
             },
         )
     }
+    deleting?.let { cw ->
+        DeleteCategoryDialogs(
+            category = cw.category,
+            pinCount = cw.pinCount,
+            onDismiss = { deleting = null },
+            onConfirmed = {
+                deleting = null
+                scope.launch { repo.dao.deleteCategory(cw.category) }
+            },
+        )
+    }
     editing?.let { c ->
         CategoryDialog(
             title = "Edit category",
@@ -149,15 +167,56 @@ fun CategoriesScreen(
     }
 }
 
+@Composable
+fun DeleteCategoryDialogs(
+    category: Category,
+    pinCount: Int,
+    onDismiss: () -> Unit,
+    onConfirmed: () -> Unit,
+) {
+    var step by remember(category.id) { mutableIntStateOf(1) }
+    val pinsText = "$pinCount pin${if (pinCount == 1) "" else "s"}"
+    if (step == 1) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            icon = { Icon(Icons.Default.Delete, null) },
+            title = { Text("Delete \"${category.name}\"?") },
+            text = { Text("This category and its $pinsText will be removed. Export first if you want to keep them.") },
+            confirmButton = { TextButton(onClick = { step = 2 }) { Text("Continue") } },
+            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        )
+    } else {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("Are you sure?") },
+            text = { Text("\"${category.name}\" and $pinsText will be permanently deleted. This can't be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = onConfirmed,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                ) { Text("Delete permanently") }
+            },
+            dismissButton = { TextButton(onClick = onDismiss) { Text("Keep it") } },
+        )
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CategoryTile(
     cw: CategoryWithCount,
     onOpen: () -> Unit,
     onEdit: () -> Unit,
+    onExport: (ExportFormat) -> Unit,
+    onDelete: () -> Unit,
     onToggleCar: (Boolean) -> Unit,
 ) {
     val c = cw.category
+    var menuOpen by remember { mutableStateOf(false) }
     val size = c.tileSize.coerceIn(1, 3)
     val height = when (size) { 1 -> 120.dp; 2 -> 140.dp; else -> 160.dp }
     val bg = Color(c.color)
@@ -167,7 +226,7 @@ private fun CategoryTile(
             .height(height)
             .clip(RoundedCornerShape(20.dp))
             .background(bg)
-            .combinedClickable(onClick = onOpen, onLongClick = onEdit)
+            .combinedClickable(onClick = onOpen, onLongClick = { menuOpen = true })
             .padding(14.dp)
     ) {
         Icon(
@@ -184,6 +243,28 @@ private fun CategoryTile(
                 if (c.showInCar) "Shown in car" else "Hidden in car",
                 tint = if (c.showInCar) Color.White else Color.White.copy(alpha = 0.35f),
             )
+        }
+        Box(Modifier.align(Alignment.BottomEnd)) {
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("Edit") },
+                    leadingIcon = { Icon(Icons.Default.Edit, null) },
+                    onClick = { menuOpen = false; onEdit() },
+                )
+                ExportFormat.entries.forEach { f ->
+                    DropdownMenuItem(
+                        text = { Text("Export ${f.name}") },
+                        leadingIcon = { Icon(Icons.Default.Share, null) },
+                        onClick = { menuOpen = false; onExport(f) },
+                    )
+                }
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                    onClick = { menuOpen = false; onDelete() },
+                )
+            }
         }
         Column(Modifier.align(Alignment.BottomStart)) {
             Text(
