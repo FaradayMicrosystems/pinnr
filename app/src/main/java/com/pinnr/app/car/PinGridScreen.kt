@@ -60,7 +60,7 @@ class PinGridScreen(carContext: CarContext) : Screen(carContext) {
         }
         cats.forEach { cat ->
             val icon = CarIcon.Builder(IconCompat.createWithResource(carContext, R.drawable.ic_pin))
-                .setTint(CarColor.createCustomColor(cat.color, cat.color))
+                .setTint(CarColor.createCustom(cat.color, cat.color))
                 .build()
             list.addItem(
                 GridItem.Builder()
