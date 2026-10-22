@@ -64,16 +64,71 @@ object Exporter {
     private fun xml(s: String) = s.replace("&", "&amp;").replace("<", "&lt;")
         .replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&apos;")
 
-    /** Writes the export to cache and opens the system share sheet. */
-    fun share(context: Context, fileBase: String, format: ExportFormat, pins: List<Pin>, cats: List<Category>) {
+    private fun render(format: ExportFormat, pins: List<Pin>, cats: List<Category>): String {
         val map = cats.associateBy { it.id }
-        val text = when (format) {
+        return when (format) {
             ExportFormat.CSV -> csv(pins, map)
             ExportFormat.GPX -> gpx(pins, map)
         }
-        val dir = File(context.cacheDir, "exports").apply { mkdirs() }
+    }
+
+    private fun fileName(fileBase: String, format: ExportFormat): String {
         val safe = fileBase.replace(Regex("[^A-Za-z0-9_-]+"), "_").trim('_').ifEmpty { "pins" }
-        val file = File(dir, "$safe.${format.ext}")
+        val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date())
+        return "pinnr_${safe}_$stamp.${format.ext}"
+    }
+
+    /** Share or download, then tell the user what happened. */
+    suspend fun export(
+        context: Context, fileBase: String, format: ExportFormat,
+        pins: List<Pin>, cats: List<Category>, download: Boolean,
+    ) {
+        if (pins.isEmpty()) {
+            android.widget.Toast.makeText(context, "No pins to export", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (download && android.os.Build.VERSION.SDK_INT >= 29) {
+            val name = fileName(fileBase, format)
+            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                saveToDownloads(context, name, format, render(format, pins, cats))
+            }
+            android.widget.Toast.makeText(
+                context,
+                if (ok) "Saved to Downloads/$name" else "Couldn't save the file",
+                android.widget.Toast.LENGTH_LONG,
+            ).show()
+        } else {
+            share(context, fileBase, format, pins, cats)
+        }
+    }
+
+    @androidx.annotation.RequiresApi(29)
+    private fun saveToDownloads(context: Context, name: String, format: ExportFormat, text: String): Boolean {
+        val resolver = context.contentResolver
+        val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, format.mime)
+            put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+            put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return false
+        return try {
+            resolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) } ?: return false
+            values.clear()
+            values.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+            true
+        } catch (e: Exception) {
+            resolver.delete(uri, null, null)
+            false
+        }
+    }
+
+    /** Writes the export to cache and opens the system share sheet. */
+    fun share(context: Context, fileBase: String, format: ExportFormat, pins: List<Pin>, cats: List<Category>) {
+        val text = render(format, pins, cats)
+        val dir = File(context.cacheDir, "exports").apply { mkdirs() }
+        val file = File(dir, fileName(fileBase, format))
         file.writeText(text)
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         val send = Intent(Intent.ACTION_SEND).apply {

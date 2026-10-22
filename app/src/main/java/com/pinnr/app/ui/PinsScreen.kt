@@ -56,18 +56,13 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
                 actions = {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        ExportFormat.entries.forEach { f ->
-                            DropdownMenuItem(
-                                text = { Text("Export as ${f.name}") },
-                                leadingIcon = { Icon(Icons.Default.Share, null) },
-                                onClick = {
-                                    menu = false
-                                    val c = cat ?: return@DropdownMenuItem
-                                    scope.launch {
-                                        Exporter.share(ctx, c.name, f, repo.dao.pinsForExport(c.id), listOf(c))
-                                    }
-                                },
-                            )
+                        ExportMenuItems { f, dl ->
+                            menu = false
+                            cat?.let { c ->
+                                scope.launch {
+                                    Exporter.export(ctx, c.name, f, repo.dao.pinsForExport(c.id), listOf(c), dl)
+                                }
+                            }
                         }
                         DropdownMenuItem(
                             text = { Text("Edit category") },

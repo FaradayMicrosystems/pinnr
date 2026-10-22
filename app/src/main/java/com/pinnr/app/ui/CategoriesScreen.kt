@@ -37,6 +37,23 @@ val PALETTE = listOf(
 
 val SIZE_LABELS = listOf("Small", "Medium", "Large")
 
+/** Download + Share entries for each export format. [onPick] gets (format, download). */
+@Composable
+fun ExportMenuItems(prefix: String = "", onPick: (ExportFormat, Boolean) -> Unit) {
+    ExportFormat.entries.forEach { f ->
+        DropdownMenuItem(
+            text = { Text("Download $prefix${f.name}") },
+            leadingIcon = { Icon(Icons.Default.Download, null) },
+            onClick = { onPick(f, true) },
+        )
+        DropdownMenuItem(
+            text = { Text("Share $prefix${f.name}") },
+            leadingIcon = { Icon(Icons.Default.Share, null) },
+            onClick = { onPick(f, false) },
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategoriesScreen(
@@ -58,18 +75,13 @@ fun CategoriesScreen(
             TopAppBar(
                 title = { Text("Pinnr") },
                 actions = {
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.Share, "Export all") }
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.Download, "Export all") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        ExportFormat.entries.forEach { f ->
-                            DropdownMenuItem(
-                                text = { Text("Export all as ${f.name}") },
-                                onClick = {
-                                    menu = false
-                                    scope.launch {
-                                        Exporter.share(ctx, "pinnr_all", f, repo.dao.allPins(), repo.dao.allCategories())
-                                    }
-                                },
-                            )
+                        ExportMenuItems(prefix = "all as ") { f, dl ->
+                            menu = false
+                            scope.launch {
+                                Exporter.export(ctx, "all", f, repo.dao.allPins(), repo.dao.allCategories(), dl)
+                            }
                         }
                     }
                 },
@@ -118,9 +130,9 @@ fun CategoriesScreen(
                     cw = cw,
                     onOpen = { onOpen(cw.category.id) },
                     onEdit = { editing = cw.category },
-                    onExport = { f ->
+                    onExport = { f, dl ->
                         scope.launch {
-                            Exporter.share(ctx, cw.category.name, f, repo.dao.pinsForExport(cw.category.id), listOf(cw.category))
+                            Exporter.export(ctx, cw.category.name, f, repo.dao.pinsForExport(cw.category.id), listOf(cw.category), dl)
                         }
                     },
                     onDelete = { deleting = cw },
@@ -211,7 +223,7 @@ private fun CategoryTile(
     cw: CategoryWithCount,
     onOpen: () -> Unit,
     onEdit: () -> Unit,
-    onExport: (ExportFormat) -> Unit,
+    onExport: (ExportFormat, Boolean) -> Unit,
     onDelete: () -> Unit,
     onToggleCar: (Boolean) -> Unit,
 ) {
@@ -251,13 +263,7 @@ private fun CategoryTile(
                     leadingIcon = { Icon(Icons.Default.Edit, null) },
                     onClick = { menuOpen = false; onEdit() },
                 )
-                ExportFormat.entries.forEach { f ->
-                    DropdownMenuItem(
-                        text = { Text("Export ${f.name}") },
-                        leadingIcon = { Icon(Icons.Default.Share, null) },
-                        onClick = { menuOpen = false; onExport(f) },
-                    )
-                }
+                ExportMenuItems { f, dl -> menuOpen = false; onExport(f, dl) }
                 HorizontalDivider()
                 DropdownMenuItem(
                     text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
