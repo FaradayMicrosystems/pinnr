@@ -1,0 +1,93 @@
+package com.pinnr.app.data
+
+import android.content.Context
+import androidx.room.*
+import kotlinx.coroutines.flow.Flow
+
+@Entity(tableName = "categories")
+data class Category(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val color: Int,
+    /** Shown on the Android Auto grid. */
+    val showInCar: Boolean = true,
+    val sortOrder: Int = 0,
+)
+
+@Entity(
+    tableName = "pins",
+    foreignKeys = [ForeignKey(
+        entity = Category::class,
+        parentColumns = ["id"],
+        childColumns = ["categoryId"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index("categoryId")],
+)
+data class Pin(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val categoryId: Long,
+    val lat: Double,
+    val lng: Double,
+    val accuracyM: Float?,
+    val timestamp: Long,
+    val address: String? = null,
+    val note: String? = null,
+)
+
+data class CategoryWithCount(
+    @Embedded val category: Category,
+    val pinCount: Int,
+)
+
+@Dao
+interface PinDao {
+    @Query(
+        "SELECT c.*, (SELECT COUNT(*) FROM pins p WHERE p.categoryId = c.id) AS pinCount " +
+            "FROM categories c ORDER BY c.sortOrder, c.name COLLATE NOCASE"
+    )
+    fun categoriesWithCounts(): Flow<List<CategoryWithCount>>
+
+    @Query("SELECT * FROM categories WHERE showInCar = 1 ORDER BY sortOrder, name COLLATE NOCASE")
+    fun carCategories(): Flow<List<Category>>
+
+    @Query("SELECT * FROM categories WHERE id = :id")
+    suspend fun category(id: Long): Category?
+
+    @Insert suspend fun insertCategory(c: Category): Long
+    @Update suspend fun updateCategory(c: Category)
+    @Delete suspend fun deleteCategory(c: Category)
+
+    @Query("SELECT * FROM pins WHERE categoryId = :categoryId ORDER BY timestamp DESC")
+    fun pinsFor(categoryId: Long): Flow<List<Pin>>
+
+    @Query("SELECT * FROM pins WHERE categoryId = :categoryId ORDER BY timestamp")
+    suspend fun pinsForExport(categoryId: Long): List<Pin>
+
+    @Query("SELECT * FROM pins ORDER BY timestamp")
+    suspend fun allPins(): List<Pin>
+
+    @Query("SELECT * FROM categories")
+    suspend fun allCategories(): List<Category>
+
+    @Insert suspend fun insertPin(p: Pin): Long
+    @Query("UPDATE pins SET address = :address WHERE id = :id")
+    suspend fun setAddress(id: Long, address: String)
+    @Query("UPDATE pins SET note = :note WHERE id = :id")
+    suspend fun setNote(id: Long, note: String?)
+    @Query("DELETE FROM pins WHERE id = :id")
+    suspend fun deletePin(id: Long)
+}
+
+@Database(entities = [Category::class, Pin::class], version = 1, exportSchema = false)
+abstract class PinnrDb : RoomDatabase() {
+    abstract fun dao(): PinDao
+
+    companion object {
+        @Volatile private var instance: PinnrDb? = null
+        fun get(context: Context): PinnrDb = instance ?: synchronized(this) {
+            instance ?: Room.databaseBuilder(context.applicationContext, PinnrDb::class.java, "pinnr.db")
+                .build().also { instance = it }
+        }
+    }
+}
