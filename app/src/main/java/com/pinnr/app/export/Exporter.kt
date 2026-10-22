@@ -20,20 +20,21 @@ object Exporter {
     }
     private val local = SimpleDateFormat("d MMM yyyy HH:mm", Locale.getDefault())
 
-    fun pinName(cat: Category, pin: Pin): String = "${cat.name} – ${local.format(Date(pin.timestamp))}"
+    fun pinName(cat: Category, pin: Pin): String =
+        pin.name?.takeIf { it.isNotBlank() } ?: "${cat.name} – ${local.format(Date(pin.timestamp))}"
 
     /**
      * CSV laid out for Google My Maps import: choose Latitude/Longitude as the
      * position columns and Name as the title column.
      */
     fun csv(pins: List<Pin>, cats: Map<Long, Category>): String = buildString {
-        append("Name,Latitude,Longitude,Category,Timestamp,Address,Note,AccuracyMeters\n")
+        append("Name,Description,Latitude,Longitude,Category,Timestamp,Address,AccuracyMeters\n")
         pins.forEach { p ->
             val c = cats[p.categoryId] ?: return@forEach
             append(
                 listOf(
-                    pinName(c, p), p.lat.toString(), p.lng.toString(), c.name,
-                    iso.format(Date(p.timestamp)), p.address.orEmpty(), p.note.orEmpty(),
+                    pinName(c, p), p.note.orEmpty(), p.lat.toString(), p.lng.toString(), c.name,
+                    iso.format(Date(p.timestamp)), p.address.orEmpty(),
                     p.accuracyM?.let { "%.0f".format(Locale.US, it) }.orEmpty(),
                 ).joinToString(",") { csvCell(it) }
             )
@@ -52,7 +53,7 @@ object Exporter {
             append("""  <wpt lat="${p.lat}" lon="${p.lng}">""").append('\n')
             append("    <time>${iso.format(Date(p.timestamp))}</time>\n")
             append("    <name>${xml(pinName(c, p))}</name>\n")
-            val desc = listOfNotNull(p.address, p.note).joinToString("\n")
+            val desc = listOfNotNull(p.note, p.address).joinToString("\n")
             if (desc.isNotBlank()) append("    <desc>${xml(desc)}</desc>\n")
             append("    <type>${xml(c.name)}</type>\n")
             append("  </wpt>\n")

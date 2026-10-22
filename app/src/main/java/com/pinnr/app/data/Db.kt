@@ -34,7 +34,10 @@ data class Pin(
     val accuracyM: Float?,
     val timestamp: Long,
     val address: String? = null,
+    /** Shown as the description in exports (Google My Maps, GPX). */
     val note: String? = null,
+    /** Custom title; null means "<category> – <date>". */
+    val name: String? = null,
 )
 
 data class CategoryWithCount(
@@ -77,11 +80,13 @@ interface PinDao {
     suspend fun setAddress(id: Long, address: String)
     @Query("UPDATE pins SET note = :note WHERE id = :id")
     suspend fun setNote(id: Long, note: String?)
+    @Query("UPDATE pins SET name = :name, note = :note WHERE id = :id")
+    suspend fun setNameAndNote(id: Long, name: String?, note: String?)
     @Query("DELETE FROM pins WHERE id = :id")
     suspend fun deletePin(id: Long)
 }
 
-@Database(entities = [Category::class, Pin::class], version = 2, exportSchema = false)
+@Database(entities = [Category::class, Pin::class], version = 3, exportSchema = false)
 abstract class PinnrDb : RoomDatabase() {
     abstract fun dao(): PinDao
 
@@ -93,9 +98,14 @@ abstract class PinnrDb : RoomDatabase() {
                 db.execSQL("ALTER TABLE categories ADD COLUMN tileSize INTEGER NOT NULL DEFAULT 1")
             }
         }
+        private val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE pins ADD COLUMN name TEXT")
+            }
+        }
         fun get(context: Context): PinnrDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, PinnrDb::class.java, "pinnr.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build().also { instance = it }
         }
     }

@@ -126,20 +126,10 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
                 items(pins, key = { it.id }) { pin ->
                     PinCard(
                         pin = pin,
+                        title = cat?.let { Exporter.pinName(it, pin) } ?: "",
                         color = Color(cat?.color ?: 0xFF888888.toInt()),
-                        onEditNote = { editingNote = pin },
-                        onOpenMap = {
-                            val label = Uri.encode(cat?.name ?: "Pin")
-                            val uri = Uri.parse("geo:${pin.lat},${pin.lng}?q=${pin.lat},${pin.lng}($label)")
-                            runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
-                        },
-                        onDelete = {
-                            scope.launch {
-                                repo.dao.deletePin(pin.id)
-                                val res = snackbar.showSnackbar("Pin deleted", actionLabel = "Undo", duration = SnackbarDuration.Short)
-                                if (res == SnackbarResult.ActionPerformed) repo.dao.insertPin(pin)
-                            }
-                        },
+                        onClick = { editingNote = pin },
+                        onOpenMap = { openInGoogleMaps(ctx, pin) },
                     )
                 }
             }
@@ -147,20 +137,62 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
     }
 
     editingNote?.let { pin ->
-        var text by remember(pin.id) { mutableStateOf(pin.note ?: "") }
+        var name by remember(pin.id) { mutableStateOf(pin.name ?: "") }
+        var desc by remember(pin.id) { mutableStateOf(pin.note ?: "") }
         AlertDialog(
             onDismissRequest = { editingNote = null },
-            title = { Text("Note") },
+            title = { Text("Edit pin") },
             text = {
-                OutlinedTextField(
-                    value = text, onValueChange = { text = it },
-                    modifier = Modifier.fillMaxWidth(), minLines = 3,
-                    placeholder = { Text("What was here?") },
-                )
+                Column {
+                    OutlinedTextField(
+                        value = name, onValueChange = { name = it.take(60) },
+                        label = { Text("Name") }, singleLine = true,
+                        placeholder = { Text(cat?.let { Exporter.pinName(it, pin.copy(name = null)) } ?: "") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = desc, onValueChange = { desc = it.take(500) },
+                        label = { Text("Description") },
+                        placeholder = { Text("Shown on the pin in Google My Maps") },
+                        modifier = Modifier.fillMaxWidth(), minLines = 3,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        pin.address ?: "%.5f, %.5f".format(Locale.US, pin.lat, pin.lng),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { openInGoogleMaps(ctx, pin) }) {
+                            Icon(Icons.Default.Map, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Google Maps")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                editingNote = null
+                                scope.launch {
+                                    repo.dao.deletePin(pin.id)
+                                    val res = snackbar.showSnackbar("Pin deleted", actionLabel = "Undo", duration = SnackbarDuration.Short)
+                                    if (res == SnackbarResult.ActionPerformed) repo.dao.insertPin(pin)
+                                }
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        ) {
+                            Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Delete")
+                        }
+                    }
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    scope.launch { repo.dao.setNote(pin.id, text.trim().ifEmpty { null }) }
+                    scope.launch {
+                        repo.dao.setNameAndNote(pin.id, name.trim().ifEmpty { null }, desc.trim().ifEmpty { null })
+                    }
                     editingNote = null
                 }) { Text("Save") }
             },
@@ -198,43 +230,49 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
 
 private val fmt = SimpleDateFormat("EEE d MMM yyyy, HH:mm", Locale.getDefault())
 
+fun openInGoogleMaps(ctx: android.content.Context, pin: Pin) {
+    val url = "https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}"
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).setPackage("com.google.android.apps.maps")
+    try {
+        ctx.startActivity(intent)
+    } catch (e: android.content.ActivityNotFoundException) {
+        runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+    }
+}
+
 @Composable
 private fun PinCard(
     pin: Pin,
+    title: String,
     color: Color,
-    onEditNote: () -> Unit,
+    onClick: () -> Unit,
     onOpenMap: () -> Unit,
-    onDelete: () -> Unit,
 ) {
-    Card(Modifier.fillMaxWidth().clickable(onClick = onEditNote)) {
-        Row(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp)) {
-            Icon(Icons.Default.Place, null, tint = color, modifier = Modifier.padding(top = 2.dp))
+    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Row(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Place, null, tint = color)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(fmt.format(Date(pin.timestamp)), style = MaterialTheme.typography.titleSmall)
+                Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (pin.name != null) {
+                    Text(fmt.format(Date(pin.timestamp)), style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Text(
                     pin.address ?: "%.5f, %.5f".format(Locale.US, pin.lat, pin.lng),
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 2, overflow = TextOverflow.Ellipsis,
                 )
-                pin.accuracyM?.let {
-                    Text(
-                        "±${it.toInt()} m",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (it > 50) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                pin.accuracyM?.takeIf { it > 50 }?.let {
+                    Text("Low GPS accuracy (±${it.toInt()} m)", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error)
                 }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    pin.note ?: "Tap to add a note",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (pin.note == null) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
-                )
+                pin.note?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
             }
-            Column {
-                IconButton(onClick = onOpenMap) { Icon(Icons.Default.Map, "Open in maps") }
-                IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Delete") }
-            }
+            IconButton(onClick = onOpenMap) { Icon(Icons.Default.Map, "Open in Google Maps") }
         }
     }
 }
