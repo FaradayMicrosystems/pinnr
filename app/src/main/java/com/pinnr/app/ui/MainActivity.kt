@@ -14,6 +14,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import kotlinx.coroutines.launch
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddLocationAlt
 import androidx.compose.material.icons.filled.Tune
@@ -44,10 +48,14 @@ class MainActivity : ComponentActivity() {
                 if (dark) darkColorScheme(primary = Color(0xFFFF8A65)) else lightColorScheme(primary = Color(0xFFD84315))
             }
             MaterialTheme(colorScheme = scheme) {
-                var tab by rememberSaveable { mutableIntStateOf(0) }
+                val pager = rememberPagerState(pageCount = { 2 })
+                val scope = rememberCoroutineScope()
+                // Bottom bar follows the swipe as soon as the page is more than halfway across.
+                val tab = pager.targetPage
+                fun goTo(page: Int) { scope.launch { pager.animateScrollToPage(page) } }
                 var openCategory by rememberSaveable { mutableStateOf<Long?>(null) }
-                BackHandler(enabled = openCategory != null || tab != 0) {
-                    if (openCategory != null) openCategory = null else tab = 0
+                BackHandler(enabled = openCategory != null || pager.currentPage != 0) {
+                    if (openCategory != null) openCategory = null else goTo(0)
                 }
                 val current = openCategory
                 if (current != null) {
@@ -58,31 +66,37 @@ class MainActivity : ComponentActivity() {
                         bottomBar = {
                             NavigationBar {
                                 NavigationBarItem(
-                                    selected = tab == 0, onClick = { tab = 0 },
+                                    selected = tab == 0, onClick = { goTo(0) },
                                     icon = { Icon(Icons.Default.AddLocationAlt, null) },
                                     label = { Text("Tag Now") },
                                 )
                                 NavigationBarItem(
-                                    selected = tab == 1, onClick = { tab = 1 },
+                                    selected = tab == 1, onClick = { goTo(1) },
                                     icon = { Icon(Icons.Default.Tune, null) },
                                     label = { Text("Tag Management") },
                                 )
                             }
                         },
                     ) { pad ->
-                        if (tab == 0) {
-                            TagNowScreen(
-                                repo = repo,
-                                hasPermission = permissionGranted.value,
-                                onRequestPermission = ::askPermission,
-                                modifier = Modifier.padding(pad),
-                            )
-                        } else {
-                            TagManagementScreen(
-                                repo = repo,
-                                onOpen = { openCategory = it },
-                                modifier = Modifier.padding(pad),
-                            )
+                        HorizontalPager(
+                            state = pager,
+                            beyondViewportPageCount = 1,
+                            modifier = Modifier.padding(pad).fillMaxSize(),
+                        ) { page ->
+                            if (page == 0) {
+                                TagNowScreen(
+                                    repo = repo,
+                                    hasPermission = permissionGranted.value,
+                                    onRequestPermission = ::askPermission,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                TagManagementScreen(
+                                    repo = repo,
+                                    onOpen = { openCategory = it },
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
                         }
                     }
                 }
