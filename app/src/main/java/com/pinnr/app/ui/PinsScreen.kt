@@ -65,12 +65,12 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
                             }
                         }
                         DropdownMenuItem(
-                            text = { Text("Edit category") },
+                            text = { Text("Edit tag") },
                             leadingIcon = { Icon(Icons.Default.Edit, null) },
                             onClick = { menu = false; editCategory = true },
                         )
                         DropdownMenuItem(
-                            text = { Text("Delete category") },
+                            text = { Text("Delete tag") },
                             leadingIcon = { Icon(Icons.Default.Delete, null) },
                             onClick = { menu = false; confirmDelete = true },
                         )
@@ -197,7 +197,7 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
 
     if (editCategory && cat != null) {
         CategoryDialog(
-            title = "Edit category",
+            title = "Edit tag",
             initial = cat,
             onDismiss = { editCategory = false },
             onSave = { name, color, size ->

@@ -56,7 +56,7 @@ class PinGridScreen(carContext: CarContext) : Screen(carContext) {
 
         val list = ItemList.Builder()
         if (cats.isEmpty()) {
-            list.setNoItemsMessage("Add categories in the Pinnr app on your phone")
+            list.setNoItemsMessage("Add tags in the Pinnr app on your phone")
         }
         cats.forEach { cat ->
             val icon = CarIcon.Builder(IconCompat.createWithResource(carContext, R.drawable.ic_pin))

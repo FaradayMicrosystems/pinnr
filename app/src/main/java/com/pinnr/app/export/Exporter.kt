@@ -27,8 +27,9 @@ object Exporter {
      * CSV laid out for Google My Maps import: choose Latitude/Longitude as the
      * position columns and Name as the title column.
      */
-    fun csv(pins: List<Pin>, cats: Map<Long, Category>): String = buildString {
-        append("Name,Description,Latitude,Longitude,Category,Timestamp,Address,AccuracyMeters\n")
+    fun csv(pins: List<Pin>, cats: Map<Long, Category>, backup: Boolean = false): String = buildString {
+        append("Name,Description,Latitude,Longitude,Category,Timestamp,Address,AccuracyMeters")
+        append(if (backup) ",TagColor,TagSize,CustomName\n" else "\n")
         pins.forEach { p ->
             val c = cats[p.categoryId] ?: return@forEach
             append(
@@ -36,7 +37,11 @@ object Exporter {
                     pinName(c, p), p.note.orEmpty(), p.lat.toString(), p.lng.toString(), c.name,
                     iso.format(Date(p.timestamp)), p.address.orEmpty(),
                     p.accuracyM?.let { "%.0f".format(Locale.US, it) }.orEmpty(),
-                ).joinToString(",") { csvCell(it) }
+                ).let {
+                    if (backup) it + listOf(
+                        String.format("#%08X", c.color), c.tileSize.toString(), if (p.name != null) "1" else "",
+                    ) else it
+                }.joinToString(",") { csvCell(it) }
             )
             append('\n')
         }
@@ -102,13 +107,33 @@ object Exporter {
         }
     }
 
+    /**
+     * Full backup of every tag and pin to Downloads/Pinnr. Returns a description
+     * of where it went, or null on failure.
+     */
+    suspend fun backup(context: Context, pins: List<Pin>, cats: List<Category>): String? =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date())
+            val name = "pinnr_backup_$stamp.csv"
+            val text = csv(pins, cats.associateBy { it.id }, backup = true)
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                if (saveToDownloads(context, name, ExportFormat.CSV, text, "Pinnr")) "Downloads/Pinnr/$name" else null
+            } else {
+                val dir = File(context.getExternalFilesDir(null), "backups").apply { mkdirs() }
+                runCatching { File(dir, name).writeText(text); File(dir, name).absolutePath }.getOrNull()
+            }
+        }
+
     @androidx.annotation.RequiresApi(29)
-    private fun saveToDownloads(context: Context, name: String, format: ExportFormat, text: String): Boolean {
+    private fun saveToDownloads(context: Context, name: String, format: ExportFormat, text: String, subdir: String? = null): Boolean {
         val resolver = context.contentResolver
         val values = android.content.ContentValues().apply {
             put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
             put(android.provider.MediaStore.MediaColumns.MIME_TYPE, format.mime)
-            put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+            put(
+                android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
+                android.os.Environment.DIRECTORY_DOWNLOADS + (subdir?.let { "/$it" } ?: ""),
+            )
             put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
         }
         val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return false

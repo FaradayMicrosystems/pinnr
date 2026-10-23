@@ -75,6 +75,12 @@ interface PinDao {
     @Query("SELECT * FROM categories")
     suspend fun allCategories(): List<Category>
 
+    @Query("SELECT * FROM categories WHERE name = :name COLLATE NOCASE LIMIT 1")
+    suspend fun categoryByName(name: String): Category?
+
+    @Query("SELECT COUNT(*) FROM pins WHERE categoryId = :categoryId AND lat = :lat AND lng = :lng AND timestamp = :timestamp")
+    suspend fun countSame(categoryId: Long, lat: Double, lng: Double, timestamp: Long): Int
+
     @Insert suspend fun insertPin(p: Pin): Long
     @Query("UPDATE pins SET address = :address WHERE id = :id")
     suspend fun setAddress(id: Long, address: String)

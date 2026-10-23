@@ -11,6 +11,13 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddLocationAlt
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 import com.pinnr.app.data.PinRepository
 
@@ -37,18 +44,47 @@ class MainActivity : ComponentActivity() {
                 if (dark) darkColorScheme(primary = Color(0xFFFF8A65)) else lightColorScheme(primary = Color(0xFFD84315))
             }
             MaterialTheme(colorScheme = scheme) {
-                var openCategory by remember { mutableStateOf<Long?>(null) }
-                BackHandler(enabled = openCategory != null) { openCategory = null }
+                var tab by rememberSaveable { mutableIntStateOf(0) }
+                var openCategory by rememberSaveable { mutableStateOf<Long?>(null) }
+                BackHandler(enabled = openCategory != null || tab != 0) {
+                    if (openCategory != null) openCategory = null else tab = 0
+                }
                 val current = openCategory
-                if (current == null) {
-                    CategoriesScreen(
-                        repo = repo,
-                        hasPermission = permissionGranted.value,
-                        onRequestPermission = ::askPermission,
-                        onOpen = { openCategory = it },
-                    )
-                } else {
+                if (current != null) {
                     PinsScreen(repo = repo, categoryId = current, onBack = { openCategory = null })
+                } else {
+                    Scaffold(
+                        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                        bottomBar = {
+                            NavigationBar {
+                                NavigationBarItem(
+                                    selected = tab == 0, onClick = { tab = 0 },
+                                    icon = { Icon(Icons.Default.AddLocationAlt, null) },
+                                    label = { Text("Tag Now") },
+                                )
+                                NavigationBarItem(
+                                    selected = tab == 1, onClick = { tab = 1 },
+                                    icon = { Icon(Icons.Default.Tune, null) },
+                                    label = { Text("Tag Management") },
+                                )
+                            }
+                        },
+                    ) { pad ->
+                        if (tab == 0) {
+                            TagNowScreen(
+                                repo = repo,
+                                hasPermission = permissionGranted.value,
+                                onRequestPermission = ::askPermission,
+                                modifier = Modifier.padding(pad),
+                            )
+                        } else {
+                            TagManagementScreen(
+                                repo = repo,
+                                onOpen = { openCategory = it },
+                                modifier = Modifier.padding(pad),
+                            )
+                        }
+                    }
                 }
             }
         }
