@@ -73,6 +73,7 @@ fun TagNowScreen(
                 navigationIcon = { BackupButton(repo) },
                 title = { Text("Tag Now") },
                 actions = {
+                    UpdateButton(repo)
                     IconButton(onClick = { showAdd = true }) { Icon(Icons.Default.Add, "New tag") }
                 },
             )

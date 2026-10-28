@@ -15,9 +15,25 @@ android {
         targetSdk = 35
         versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
         versionName = "0.2.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
+        buildConfigField("String", "UPDATE_REPO", "\"FaradayMicrosystems/pinnr\"")
+    }
+
+    // Fixed key from GitHub secrets so each build can install over the last one
+    // (Android refuses updates signed with a different key; uninstalling deletes pins).
+    val ksFile = System.getenv("PINNR_KEYSTORE_FILE")?.let { file(it) }?.takeIf { it.exists() }
+    signingConfigs {
+        if (ksFile != null) create("pinnr") {
+            storeFile = ksFile
+            storePassword = System.getenv("PINNR_KEY_PASSWORD")
+            keyAlias = "pinnr"
+            keyPassword = System.getenv("PINNR_KEY_PASSWORD")
+        }
     }
 
     buildTypes {
+        debug {
+            if (ksFile != null) signingConfig = signingConfigs.getByName("pinnr")
+        }
         release {
             isMinifyEnabled = false
         }
@@ -31,6 +47,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

@@ -175,3 +175,94 @@ fun BackupButton(repo: PinRepository) {
         else Icon(Icons.Default.Backup, "Back up pins")
     }
 }
+
+/**
+ * Top-bar update button. Checks GitHub once when shown (a dot appears if a newer
+ * build exists); tap to see it, back up, download and install over the current app.
+ */
+@Composable
+fun UpdateButton(repo: PinRepository) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var available by remember { mutableStateOf<com.pinnr.app.update.Update?>(null) }
+    var dialog by remember { mutableStateOf(false) }
+    var checking by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf<Float?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
+
+    suspend fun check(): Boolean = try {
+        available = com.pinnr.app.update.Updater.check(); true
+    } catch (e: Exception) { false }
+
+    LaunchedEffect(Unit) { check() }
+
+    IconButton(onClick = {
+        dialog = true; message = null
+        if (available == null) {
+            checking = true
+            scope.launch {
+                if (!check()) message = "Couldn't reach GitHub. Check your connection."
+                checking = false
+            }
+        }
+    }) {
+        BadgedBox(badge = { if (available != null) Badge() }) {
+            Icon(Icons.Default.SystemUpdate, "Check for updates")
+        }
+    }
+
+    if (dialog) {
+        val up = available
+        AlertDialog(
+            onDismissRequest = { if (progress == null) dialog = false },
+            icon = { Icon(Icons.Default.SystemUpdate, null) },
+            title = { Text(if (up != null) "Update available" else "Updates") },
+            text = {
+                Column {
+                    Text("Installed: build ${com.pinnr.app.update.Updater.currentBuild}")
+                    when {
+                        checking -> Text("Checking…")
+                        message != null -> Text(message!!)
+                        up != null -> {
+                            Text("New: build ${up.build}")
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "Your tags and pins are kept. A backup is saved to Downloads/Pinnr first, just in case.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        else -> Text("You're on the newest build.")
+                    }
+                    progress?.let {
+                        Spacer(Modifier.height(12.dp))
+                        LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            },
+            confirmButton = {
+                if (up != null && progress == null) TextButton(onClick = {
+                    if (!com.pinnr.app.update.Updater.canInstall(ctx)) {
+                        message = "Allow Pinnr to install apps, then come back and tap Update again."
+                        com.pinnr.app.update.Updater.openInstallPermission(ctx)
+                        return@TextButton
+                    }
+                    progress = 0f; message = null
+                    scope.launch {
+                        try {
+                            Exporter.backup(ctx, repo.dao.allPins(), repo.dao.allCategories())
+                            val apk = com.pinnr.app.update.Updater.download(ctx, up) { progress = it }
+                            progress = null; dialog = false
+                            com.pinnr.app.update.Updater.install(ctx, apk)
+                        } catch (e: Exception) {
+                            progress = null
+                            message = "Update failed: ${e.message ?: "unknown error"}"
+                        }
+                    }
+                }) { Text("Update") }
+            },
+            dismissButton = {
+                if (progress == null) TextButton(onClick = { dialog = false }) { Text("Close") }
+            },
+        )
+    }
+}

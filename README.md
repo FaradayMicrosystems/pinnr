@@ -49,3 +49,9 @@ The car side uses the Car App Library POI category and only templates, and relea
 - **Pin-behind (Android Auto):** tap the `Now` button in the top bar to cycle `-10s`, `-20s`, `-30s`, then tap a tag. The pin goes where you were that many seconds ago. Resets to `Now` after each pin.
 - **Move pins between tags:** open a pin on the phone, tap `Tag:` and pick another tag, then Save.
 - **KML export:** `Download KML` / `Share KML` in the export menus. Import into Google My Maps or Google Earth; each tag becomes its own folder with its colour.
+
+## Updating from inside the app
+
+Tap the update icon (top right of **Tag Now**). A dot on it means a newer build exists. Tap **Update**: Pinnr backs up to `Downloads/Pinnr`, downloads the new APK, and Android installs it over the current app. Tags and pins are kept.
+
+This needs every build signed with the same key. The key lives in two repository secrets, `PINNR_KEYSTORE_B64` and `PINNR_KEY_PASSWORD`. Without them the build still works, but cannot install over the existing app.
