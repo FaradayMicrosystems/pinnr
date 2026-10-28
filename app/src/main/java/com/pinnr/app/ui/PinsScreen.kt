@@ -37,6 +37,7 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
     var reload by remember { mutableIntStateOf(0) }
     LaunchedEffect(categoryId, reload) { category = repo.dao.category(categoryId) }
     val pins by repo.dao.pinsFor(categoryId).collectAsState(initial = emptyList())
+    val allCats by repo.dao.categoriesWithCounts().collectAsState(initial = emptyList())
 
     var editingNote by remember { mutableStateOf<Pin?>(null) }
     var editCategory by remember { mutableStateOf(false) }
@@ -134,6 +135,8 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
     editingNote?.let { pin ->
         var name by remember(pin.id) { mutableStateOf(pin.name ?: "") }
         var desc by remember(pin.id) { mutableStateOf(pin.note ?: "") }
+        var targetCat by remember(pin.id) { mutableLongStateOf(pin.categoryId) }
+        var catMenu by remember(pin.id) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { editingNote = null },
             title = { Text("Edit pin") },
@@ -152,6 +155,26 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
                         placeholder = { Text("Shown on the pin in Google My Maps") },
                         modifier = Modifier.fillMaxWidth(), minLines = 3,
                     )
+                    Spacer(Modifier.height(12.dp))
+                    Box {
+                        val current = allCats.firstOrNull { it.category.id == targetCat }?.category
+                        OutlinedButton(onClick = { catMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.Label, null, Modifier.size(18.dp),
+                                tint = Color(current?.color ?: 0xFF888888.toInt()))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Tag: ${current?.name ?: ""}", Modifier.weight(1f))
+                            Icon(Icons.Default.ArrowDropDown, null)
+                        }
+                        DropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
+                            allCats.forEach { cw ->
+                                DropdownMenuItem(
+                                    text = { Text(cw.category.name) },
+                                    leadingIcon = { Icon(Icons.Default.Label, null, tint = Color(cw.category.color)) },
+                                    onClick = { targetCat = cw.category.id; catMenu = false },
+                                )
+                            }
+                        }
+                    }
                     Spacer(Modifier.height(4.dp))
                     Text(
                         pin.address ?: "%.5f, %.5f".format(Locale.US, pin.lat, pin.lng),
@@ -187,6 +210,11 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
                 TextButton(onClick = {
                     scope.launch {
                         repo.dao.setNameAndNote(pin.id, name.trim().ifEmpty { null }, desc.trim().ifEmpty { null })
+                        if (targetCat != pin.categoryId) {
+                            repo.dao.movePin(pin.id, targetCat)
+                            val to = allCats.firstOrNull { it.category.id == targetCat }?.category?.name
+                            snackbar.showSnackbar("Moved to ${to ?: "tag"}")
+                        }
                     }
                     editingNote = null
                 }) { Text("Save") }

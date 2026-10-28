@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, "release/**"]
   workflow_dispatch:
 
 permissions:
@@ -50,8 +50,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: Pinnr build ${{ github.run_number }}
-          make_latest: true
+          name: Pinnr build ${{ github.run_number }}${{ github.ref_name != 'main' && format(' ({0})', github.ref_name) || '' }}
+          target_commitish: ${{ github.sha }}
+          prerelease: ${{ github.ref_name != 'main' }}
+          make_latest: ${{ github.ref_name == 'main' }}
           files: out/*.apk
           body: |
             Debug build for sideloading. Download the `.apk` below and open it on your phone.

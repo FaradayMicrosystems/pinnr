@@ -88,6 +88,8 @@ interface PinDao {
     suspend fun setNote(id: Long, note: String?)
     @Query("UPDATE pins SET name = :name, note = :note WHERE id = :id")
     suspend fun setNameAndNote(id: Long, name: String?, note: String?)
+    @Query("UPDATE pins SET categoryId = :categoryId WHERE id = :id")
+    suspend fun movePin(id: Long, categoryId: Long)
     @Query("DELETE FROM pins WHERE id = :id")
     suspend fun deletePin(id: Long)
 }

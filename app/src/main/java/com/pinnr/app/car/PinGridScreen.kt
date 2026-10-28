@@ -5,7 +5,9 @@ import androidx.car.app.CarToast
 import androidx.car.app.Screen
 import androidx.car.app.model.*
 import androidx.core.graphics.drawable.IconCompat
+import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.pinnr.app.R
@@ -19,8 +21,15 @@ class PinGridScreen(carContext: CarContext) : Screen(carContext) {
     private var categories: List<Category>? = null
     private var lastPinId: Long? = null
     private var busy = false
+    /** Index into [PinRepository.BACK_STEPS]; 0 = pin where I am now. */
+    private var backIndex = 0
+    private val secondsBack get() = PinRepository.BACK_STEPS[backIndex]
 
     init {
+        lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) = repo.startTracking()
+            override fun onStop(owner: LifecycleOwner) = repo.stopTracking()
+        })
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 repo.dao.carCategories().collect {
@@ -47,7 +56,13 @@ class PinGridScreen(carContext: CarContext) : Screen(carContext) {
 
         val cats = categories
         val builder = GridTemplate.Builder()
-            .setTitle(if (busy) "Pinning…" else "Tap to pin")
+            .setTitle(
+                when {
+                    busy -> "Pinning…"
+                    secondsBack > 0 -> "Tap to pin ${secondsBack}s back"
+                    else -> "Tap to pin"
+                }
+            )
             .setHeaderAction(Action.APP_ICON)
 
         if (cats == null) {
@@ -72,19 +87,27 @@ class PinGridScreen(carContext: CarContext) : Screen(carContext) {
         }
         builder.setSingleList(list.build())
 
+        val strip = ActionStrip.Builder().addAction(
+            Action.Builder()
+                .setTitle(if (secondsBack == 0) "Now" else "-${secondsBack}s")
+                .setOnClickListener {
+                    backIndex = (backIndex + 1) % PinRepository.BACK_STEPS.size
+                    if (!repo.hasLocationPermission()) backIndex = 0
+                    invalidate()
+                }.build()
+        )
         lastPinId?.let { id ->
-            builder.setActionStrip(
-                ActionStrip.Builder().addAction(
-                    Action.Builder().setTitle("Undo")
-                        .setOnClickListener {
-                            repo.undo(id)
-                            lastPinId = null
-                            CarToast.makeText(carContext, "Pin removed", CarToast.LENGTH_SHORT).show()
-                            invalidate()
-                        }.build()
-                ).build()
+            strip.addAction(
+                Action.Builder().setTitle("Undo")
+                    .setOnClickListener {
+                        repo.undo(id)
+                        lastPinId = null
+                        CarToast.makeText(carContext, "Pin removed", CarToast.LENGTH_SHORT).show()
+                        invalidate()
+                    }.build()
             )
         }
+        builder.setActionStrip(strip.build())
         return builder.build()
     }
 
@@ -93,18 +116,25 @@ class PinGridScreen(carContext: CarContext) : Screen(carContext) {
         busy = true
         invalidate()
         lifecycleScope.launch {
-            val msg = when (val r = repo.dropPin(cat.id)) {
+            val wanted = secondsBack
+            val msg = when (val r = repo.dropPin(cat.id, wanted)) {
                 is DropResult.Dropped -> {
                     lastPinId = r.pinId
                     val acc = r.accuracyM
-                    if (acc != null && acc > 50f) "Pinned to ${r.categoryName} (low GPS accuracy, ±${acc.toInt()} m)"
-                    else "Pinned to ${r.categoryName}"
+                    val where = when {
+                        r.secondsBack > 0 -> " (${r.secondsBack}s back)"
+                        wanted > 0 -> " (no earlier fix, used current)"
+                        else -> ""
+                    }
+                    if (acc != null && acc > 50f) "Pinned to ${r.categoryName}$where, low GPS ±${acc.toInt()} m"
+                    else "Pinned to ${r.categoryName}$where"
                 }
                 DropResult.NoPermission -> "Location permission needed"
                 DropResult.NoLocation -> "Couldn't get your location"
                 null -> null
             }
             busy = false
+            backIndex = 0 // one-shot: next tap is "now" again
             msg?.let { CarToast.makeText(carContext, it, CarToast.LENGTH_LONG).show() }
             invalidate()
         }

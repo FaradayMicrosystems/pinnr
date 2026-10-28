@@ -12,6 +12,8 @@ import java.util.*
 enum class ExportFormat(val ext: String, val mime: String) {
     CSV("csv", "text/csv"),
     GPX("gpx", "application/gpx+xml"),
+    /** Google My Maps / Google Earth: one folder per tag, pins coloured by tag. */
+    KML("kml", "application/vnd.google-earth.kml+xml"),
 }
 
 object Exporter {
@@ -66,6 +68,42 @@ object Exporter {
         append("</gpx>\n")
     }
 
+    /** KML colours are aabbggrr hex. */
+    private fun kmlColor(argb: Int): String {
+        val a = (argb ushr 24) and 0xFF; val r = (argb shr 16) and 0xFF
+        val g = (argb shr 8) and 0xFF; val b = argb and 0xFF
+        return "%02x%02x%02x%02x".format(a, b, g, r)
+    }
+
+    fun kml(pins: List<Pin>, cats: Map<Long, Category>, docName: String = "Pinnr"): String = buildString {
+        append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+        append("<kml xmlns=\"http://www.opengis.net/kml/2.2\">\n<Document>\n")
+        append("  <name>${xml(docName)}</name>\n")
+        val byCat = pins.groupBy { it.categoryId }.filterKeys { it in cats }
+        byCat.keys.forEach { id ->
+            val c = cats.getValue(id)
+            append("  <Style id=\"tag$id\"><IconStyle><color>${kmlColor(c.color)}</color><scale>1.1</scale>")
+            append("<Icon><href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href></Icon>")
+            append("</IconStyle></Style>\n")
+        }
+        byCat.forEach { (id, list) ->
+            val c = cats.getValue(id)
+            append("  <Folder>\n    <name>${xml(c.name)}</name>\n")
+            list.forEach { p ->
+                append("    <Placemark>\n")
+                append("      <name>${xml(pinName(c, p))}</name>\n")
+                val desc = listOfNotNull(p.note, p.address).joinToString("\n")
+                if (desc.isNotBlank()) append("      <description>${xml(desc)}</description>\n")
+                append("      <TimeStamp><when>${iso.format(Date(p.timestamp))}</when></TimeStamp>\n")
+                append("      <styleUrl>#tag$id</styleUrl>\n")
+                append("      <Point><coordinates>${p.lng},${p.lat},0</coordinates></Point>\n")
+                append("    </Placemark>\n")
+            }
+            append("  </Folder>\n")
+        }
+        append("</Document>\n</kml>\n")
+    }
+
     private fun xml(s: String) = s.replace("&", "&amp;").replace("<", "&lt;")
         .replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&apos;")
 
@@ -74,6 +112,7 @@ object Exporter {
         return when (format) {
             ExportFormat.CSV -> csv(pins, map)
             ExportFormat.GPX -> gpx(pins, map)
+            ExportFormat.KML -> kml(pins, map)
         }
     }
 
