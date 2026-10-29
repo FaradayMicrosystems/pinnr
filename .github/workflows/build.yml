@@ -37,7 +37,7 @@ jobs:
           fi
           # Tolerate spaces/line breaks picked up when pasting.
           printf '%s' "$KS" | tr -d ' \r\n\t' > "$RUNNER_TEMP/ks.b64"
-          echo "Key text length: $(wc -c < "$RUNNER_TEMP/ks.b64") (expected 3400)"
+          echo "::notice::PINNR_KEYSTORE_B64 received $(wc -c < "$RUNNER_TEMP/ks.b64") characters (expected 3400), starts with $(head -c 4 "$RUNNER_TEMP/ks.b64")"
           if ! base64 -d "$RUNNER_TEMP/ks.b64" > "$RUNNER_TEMP/pinnr.jks" 2>/dev/null; then
             echo "::error::PINNR_KEYSTORE_B64 is not valid - paste the whole PINNR_KEYSTORE_B64.txt file again."
             exit 1
