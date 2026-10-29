@@ -38,6 +38,8 @@ data class Pin(
     val note: String? = null,
     /** Custom title; null means "<category> – <date>". */
     val name: String? = null,
+    /** When it was sent to the recycle bin; null = not recycled. Purged after 14 days. */
+    val deletedAt: Long? = null,
 )
 
 data class CategoryWithCount(
@@ -48,7 +50,7 @@ data class CategoryWithCount(
 @Dao
 interface PinDao {
     @Query(
-        "SELECT c.*, (SELECT COUNT(*) FROM pins p WHERE p.categoryId = c.id) AS pinCount " +
+        "SELECT c.*, (SELECT COUNT(*) FROM pins p WHERE p.categoryId = c.id AND p.deletedAt IS NULL) AS pinCount " +
             "FROM categories c ORDER BY c.sortOrder, c.name COLLATE NOCASE"
     )
     fun categoriesWithCounts(): Flow<List<CategoryWithCount>>
@@ -63,13 +65,13 @@ interface PinDao {
     @Update suspend fun updateCategory(c: Category)
     @Delete suspend fun deleteCategory(c: Category)
 
-    @Query("SELECT * FROM pins WHERE categoryId = :categoryId ORDER BY timestamp DESC")
+    @Query("SELECT * FROM pins WHERE categoryId = :categoryId AND deletedAt IS NULL ORDER BY timestamp DESC")
     fun pinsFor(categoryId: Long): Flow<List<Pin>>
 
-    @Query("SELECT * FROM pins WHERE categoryId = :categoryId ORDER BY timestamp")
+    @Query("SELECT * FROM pins WHERE categoryId = :categoryId AND deletedAt IS NULL ORDER BY timestamp")
     suspend fun pinsForExport(categoryId: Long): List<Pin>
 
-    @Query("SELECT * FROM pins ORDER BY timestamp")
+    @Query("SELECT * FROM pins WHERE deletedAt IS NULL ORDER BY timestamp")
     suspend fun allPins(): List<Pin>
 
     @Query("SELECT * FROM categories")
@@ -90,11 +92,23 @@ interface PinDao {
     suspend fun setNameAndNote(id: Long, name: String?, note: String?)
     @Query("UPDATE pins SET categoryId = :categoryId WHERE id = :id")
     suspend fun movePin(id: Long, categoryId: Long)
+    // ---- Recycle bin ----
+    @Query("SELECT * FROM pins WHERE categoryId = :categoryId AND deletedAt IS NOT NULL ORDER BY deletedAt DESC")
+    fun recycledFor(categoryId: Long): Flow<List<Pin>>
+    @Query("SELECT COUNT(*) FROM pins WHERE categoryId = :categoryId AND deletedAt IS NOT NULL")
+    fun recycledCount(categoryId: Long): Flow<Int>
+    @Query("UPDATE pins SET deletedAt = :at WHERE id = :id")
+    suspend fun setDeletedAt(id: Long, at: Long?)
+    @Query("DELETE FROM pins WHERE categoryId = :categoryId AND deletedAt IS NOT NULL")
+    suspend fun emptyBin(categoryId: Long)
+    @Query("DELETE FROM pins WHERE deletedAt IS NOT NULL AND deletedAt < :before")
+    suspend fun purgeRecycled(before: Long): Int
+
     @Query("DELETE FROM pins WHERE id = :id")
     suspend fun deletePin(id: Long)
 }
 
-@Database(entities = [Category::class, Pin::class], version = 3, exportSchema = false)
+@Database(entities = [Category::class, Pin::class], version = 4, exportSchema = false)
 abstract class PinnrDb : RoomDatabase() {
     abstract fun dao(): PinDao
 
@@ -111,9 +125,14 @@ abstract class PinnrDb : RoomDatabase() {
                 db.execSQL("ALTER TABLE pins ADD COLUMN name TEXT")
             }
         }
+        private val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE pins ADD COLUMN deletedAt INTEGER")
+            }
+        }
         fun get(context: Context): PinnrDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, PinnrDb::class.java, "pinnr.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build().also { instance = it }
         }
     }

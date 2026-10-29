@@ -38,6 +38,29 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
     LaunchedEffect(categoryId, reload) { category = repo.dao.category(categoryId) }
     val pins by repo.dao.pinsFor(categoryId).collectAsState(initial = emptyList())
     val allCats by repo.dao.categoriesWithCounts().collectAsState(initial = emptyList())
+    val recycled by repo.dao.recycledFor(categoryId).collectAsState(initial = emptyList())
+    val prefs = remember { ctx.getSharedPreferences("pinnr", android.content.Context.MODE_PRIVATE) }
+    var askBeforeDelete by remember { mutableStateOf(prefs.getBoolean(PREF_ASK_DELETE, true)) }
+    fun setAsk(v: Boolean) { askBeforeDelete = v; prefs.edit().putBoolean(PREF_ASK_DELETE, v).apply() }
+    var showBin by remember { mutableStateOf(false) }
+    var openRow by remember { mutableStateOf<Any?>(null) }
+    /** Pins waiting for "permanently delete?" (one pin, or the whole bin). */
+    var confirmPurge by remember { mutableStateOf<List<Pin>?>(null) }
+    fun purge(list: List<Pin>) {
+        scope.launch {
+            list.forEach { repo.dao.deletePin(it.id) }
+            snackbar.showSnackbar(if (list.size == 1) "Pin permanently deleted" else "${list.size} pins permanently deleted")
+        }
+    }
+    fun requestPurge(list: List<Pin>) { if (askBeforeDelete) confirmPurge = list else purge(list) }
+    fun recycle(pin: Pin) {
+        scope.launch {
+            repo.dao.setDeletedAt(pin.id, System.currentTimeMillis())
+            val r = snackbar.showSnackbar("Moved to recycle bin", actionLabel = "Undo", duration = SnackbarDuration.Short)
+            if (r == SnackbarResult.ActionPerformed) repo.dao.setDeletedAt(pin.id, null)
+        }
+    }
+    androidx.activity.compose.BackHandler(enabled = showBin) { showBin = false }
 
     var editingNote by remember { mutableStateOf<Pin?>(null) }
     var editCategory by remember { mutableStateOf(false) }
@@ -50,11 +73,32 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text(cat?.name ?: "") },
+                title = { Text(if (showBin) "Recycle bin" else cat?.name ?: "") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                    IconButton(onClick = { if (showBin) showBin = false else onBack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
                 },
                 actions = {
+                    if (showBin) {
+                        IconButton(enabled = recycled.isNotEmpty(), onClick = { requestPurge(recycled) }) {
+                            Icon(Icons.Default.DeleteForever, "Empty recycle bin")
+                        }
+                        IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
+                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Ask before permanent delete") },
+                                trailingIcon = { Checkbox(checked = askBeforeDelete, onCheckedChange = null) },
+                                onClick = { setAsk(!askBeforeDelete) },
+                            )
+                        }
+                        return@TopAppBar
+                    }
+                    IconButton(onClick = { showBin = true }) {
+                        BadgedBox(badge = { if (recycled.isNotEmpty()) Badge { Text("${recycled.size}") } }) {
+                            Icon(Icons.Default.DeleteOutline, "Recycle bin")
+                        }
+                    }
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         ExportMenuItems { f, dl ->
@@ -80,7 +124,7 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
+            if (!showBin) ExtendedFloatingActionButton(
                 onClick = {
                     if (dropping) return@ExtendedFloatingActionButton
                     dropping = true
@@ -104,7 +148,13 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
             )
         },
     ) { pad ->
-        if (pins.isEmpty()) {
+        if (showBin) {
+            RecycleBinList(
+                pins = recycled, cat = cat, pad = pad,
+                onRestore = { p -> scope.launch { repo.dao.setDeletedAt(p.id, null); snackbar.showSnackbar("Pin restored") } },
+                onDelete = { p -> requestPurge(listOf(p)) },
+            )
+        } else if (pins.isEmpty()) {
             Box(Modifier.padding(pad).fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     "No pins yet.\nTap a tile in Android Auto, or use the button below.",
@@ -120,13 +170,23 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(pins, key = { it.id }) { pin ->
-                    PinCard(
-                        pin = pin,
-                        title = cat?.let { Exporter.pinName(it, pin) } ?: "",
-                        color = Color(cat?.color ?: 0xFF888888.toInt()),
-                        onClick = { editingNote = pin },
-                        onOpenMap = { openInGoogleMaps(ctx, pin) },
-                    )
+                    val cs = MaterialTheme.colorScheme
+                    SwipeActionsRow(
+                        key = pin.id, openKey = openRow, onOpen = { openRow = it },
+                        actions = listOf(
+                            SwipeAction("Edit", Icons.Default.Edit, cs.secondaryContainer, cs.onSecondaryContainer) { editingNote = pin },
+                            SwipeAction("Recycle", Icons.Default.DeleteOutline, cs.tertiaryContainer, cs.onTertiaryContainer) { recycle(pin) },
+                            SwipeAction("Delete", Icons.Default.DeleteForever, cs.error, cs.onError) { requestPurge(listOf(pin)) },
+                        ),
+                    ) {
+                        PinCard(
+                            pin = pin,
+                            title = cat?.let { Exporter.pinName(it, pin) } ?: "",
+                            color = Color(cat?.color ?: 0xFF888888.toInt()),
+                            onClick = { editingNote = pin },
+                            onOpenMap = { openInGoogleMaps(ctx, pin) },
+                        )
+                    }
                 }
             }
         }
@@ -191,17 +251,13 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
                         OutlinedButton(
                             onClick = {
                                 editingNote = null
-                                scope.launch {
-                                    repo.dao.deletePin(pin.id)
-                                    val res = snackbar.showSnackbar("Pin deleted", actionLabel = "Undo", duration = SnackbarDuration.Short)
-                                    if (res == SnackbarResult.ActionPerformed) repo.dao.insertPin(pin)
-                                }
+                                recycle(pin)
                             },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                         ) {
-                            Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
+                            Icon(Icons.Default.DeleteOutline, null, Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Delete")
+                            Text("Recycle")
                         }
                     }
                 }
@@ -220,6 +276,38 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
                 }) { Text("Save") }
             },
             dismissButton = { TextButton(onClick = { editingNote = null }) { Text("Cancel") } },
+        )
+    }
+
+    confirmPurge?.let { list ->
+        var dontAsk by remember(list) { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { confirmPurge = null },
+            icon = { Icon(Icons.Default.DeleteForever, null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text(if (list.size == 1) "Permanently delete this pin?" else "Permanently delete ${list.size} pins?") },
+            text = {
+                Column {
+                    Text("This can't be undone.")
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        Modifier.fillMaxWidth().clickable { dontAsk = !dontAsk },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = dontAsk, onCheckedChange = { dontAsk = it })
+                        Text("Don't ask again")
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { if (dontAsk) setAsk(false); confirmPurge = null; purge(list) },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                ) { Text("Delete permanently") }
+            },
+            dismissButton = { TextButton(onClick = { confirmPurge = null }) { Text("Cancel") } },
         )
     }
 
@@ -248,6 +336,61 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
                 scope.launch { repo.dao.deleteCategory(cat); onBack() }
             },
         )
+    }
+}
+
+const val PREF_ASK_DELETE = "askBeforePermanentDelete"
+
+@Composable
+private fun RecycleBinList(
+    pins: List<Pin>,
+    cat: Category?,
+    pad: PaddingValues,
+    onRestore: (Pin) -> Unit,
+    onDelete: (Pin) -> Unit,
+) {
+    if (pins.isEmpty()) {
+        Box(Modifier.padding(pad).fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                "Recycle bin is empty.\nRecycled pins stay here for ${com.pinnr.app.RECYCLE_DAYS} days.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(32.dp),
+            )
+        }
+        return
+    }
+    LazyColumn(
+        Modifier.padding(pad).fillMaxSize(),
+        contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 24.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            Text(
+                "Pins are permanently deleted ${com.pinnr.app.RECYCLE_DAYS} days after recycling.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        items(pins, key = { it.id }) { pin ->
+            val left = (com.pinnr.app.RECYCLE_DAYS -
+                (System.currentTimeMillis() - (pin.deletedAt ?: 0L)) / 86_400_000L).coerceAtLeast(0)
+            Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(cat?.let { Exporter.pinName(it, pin) } ?: "", style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(pin.address ?: "%.5f, %.5f".format(Locale.US, pin.lat, pin.lng),
+                            style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(if (left <= 1) "Deleted within a day" else "$left days left",
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    }
+                    IconButton(onClick = { onRestore(pin) }) { Icon(Icons.Default.Restore, "Restore") }
+                    IconButton(onClick = { onDelete(pin) }) {
+                        Icon(Icons.Default.DeleteForever, "Delete permanently", tint = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+        }
     }
 }
 

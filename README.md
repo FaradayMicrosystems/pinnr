@@ -47,6 +47,7 @@ The car side uses the Car App Library POI category and only templates, and relea
 ## What's new in 0.7
 
 - **Pin-behind (Android Auto):** tap the `Now` button in the top bar to cycle `-10s`, `-20s`, `-30s`, then tap a tag. The pin goes where you were that many seconds ago. Resets to `Now` after each pin.
+- **Swipe a pin left** in a tag's list for **Edit**, **Recycle** and **Delete**. Recycle has no check and can be undone from the recycle bin (bin icon, top right) for 14 days; after that it's deleted for good. Delete asks first, unless you ticked **Don't ask again** (turn it back on from the bin's menu).
 - **Move pins between tags:** open a pin on the phone, tap `Tag:` and pick another tag, then Save.
 - **KML export:** `Download KML` / `Share KML` in the export menus. Import into Google My Maps or Google Earth; each tag becomes its own folder with its colour.
 

@@ -7,10 +7,16 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+const val RECYCLE_DAYS = 14
+
 class PinnrApp : Application() {
     override fun onCreate() {
         super.onCreate()
         val prefs = getSharedPreferences("pinnr", MODE_PRIVATE)
+        // Recycle bin keeps pins for 14 days, then they're gone for good.
+        CoroutineScope(Dispatchers.IO).launch {
+            PinRepository.get(this@PinnrApp).dao.purgeRecycled(System.currentTimeMillis() - RECYCLE_DAYS * 86_400_000L)
+        }
         if (!prefs.getBoolean("seeded", false)) {
             val dao = PinRepository.get(this).dao
             CoroutineScope(Dispatchers.IO).launch {
