@@ -29,17 +29,30 @@ jobs:
       - name: Load signing key
         env:
           KS: ${{ secrets.PINNR_KEYSTORE_B64 }}
+          PW: ${{ secrets.PINNR_KEY_PASSWORD }}
         run: |
-          if [ -n "$KS" ]; then
-            echo "$KS" | base64 -d > "$RUNNER_TEMP/pinnr.jks"
-            echo "PINNR_KEYSTORE_FILE=$RUNNER_TEMP/pinnr.jks" >> "$GITHUB_ENV"
-          else
+          if [ -z "$KS" ]; then
             echo "::warning::PINNR_KEYSTORE_B64 secret not set - build uses a random key and cannot update over the installed app."
+            exit 0
           fi
+          # Tolerate spaces/line breaks picked up when pasting.
+          printf '%s' "$KS" | tr -d ' \r\n\t' > "$RUNNER_TEMP/ks.b64"
+          echo "Key text length: $(wc -c < "$RUNNER_TEMP/ks.b64") (expected 3400)"
+          if ! base64 -d "$RUNNER_TEMP/ks.b64" > "$RUNNER_TEMP/pinnr.jks" 2>/dev/null; then
+            echo "::error::PINNR_KEYSTORE_B64 is not valid - paste the whole PINNR_KEYSTORE_B64.txt file again."
+            exit 1
+          fi
+          PWC=$(printf '%s' "$PW" | tr -d ' \r\n\t')
+          if ! keytool -list -keystore "$RUNNER_TEMP/pinnr.jks" -storepass "$PWC" -alias pinnr >/dev/null 2>&1; then
+            echo "::error::Key and password don't match - re-paste PINNR_KEY_PASSWORD.txt (32 characters) and check PINNR_KEYSTORE_B64."
+            exit 1
+          fi
+          echo "PINNR_KEYSTORE_FILE=$RUNNER_TEMP/pinnr.jks" >> "$GITHUB_ENV"
+          echo "PINNR_KEY_PASSWORD=$PWC" >> "$GITHUB_ENV"
+          echo "::add-mask::$PWC"
+          echo "Signing key loaded."
 
       - name: Build debug APK
-        env:
-          PINNR_KEY_PASSWORD: ${{ secrets.PINNR_KEY_PASSWORD }}
         run: |
           set -o pipefail
           gradle assembleDebug --no-daemon 2>&1 | tee build.log || {
