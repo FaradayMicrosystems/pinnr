@@ -44,7 +44,7 @@ Every push to `main` builds a debug APK with GitHub Actions and publishes it as 
 
 The car side uses the Car App Library POI category and only templates, and release builds restrict which hosts may connect. Before publishing you'll need a release signing key and Play Console's Android Auto review.
 
-## What's new in 0.2
+## What's new in 0.7
 
 - **Pin-behind (Android Auto):** tap the `Now` button in the top bar to cycle `-10s`, `-20s`, `-30s`, then tap a tag. The pin goes where you were that many seconds ago. Resets to `Now` after each pin.
 - **Move pins between tags:** open a pin on the phone, tap `Tag:` and pick another tag, then Save.
