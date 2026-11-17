@@ -73,31 +73,45 @@ class PinRepository(private val context: Context) {
     }
 
     private suspend fun lookupAddress(pinId: Long, lat: Double, lng: Double) {
-        if (!Geocoder.isPresent()) return
+        val text = reverseGeocode(lat, lng)
+        if (!text.isNullOrBlank()) dao.setAddress(pinId, text)
+    }
+
+    /** Street address for a pin. Uses the saved one, otherwise looks it up from GPS and saves it. */
+    suspend fun addressFor(pin: Pin): String? {
+        pin.address?.takeIf { it.isNotBlank() }?.let { return it }
+        val text = withContext(Dispatchers.IO) { reverseGeocode(pin.lat, pin.lng) }
+        if (!text.isNullOrBlank()) dao.setAddress(pin.id, text)
+        return text
+    }
+
+    private suspend fun reverseGeocode(lat: Double, lng: Double): String? {
+        if (!Geocoder.isPresent()) return null
         val geocoder = Geocoder(context, Locale.getDefault())
         val address: Address? = try {
-            if (Build.VERSION.SDK_INT >= 33) {
-                suspendCancellableCoroutine { cont ->
-                    geocoder.getFromLocation(lat, lng, 1, object : Geocoder.GeocodeListener {
-                        override fun onGeocode(addresses: MutableList<Address>) {
-                            cont.resume(addresses.firstOrNull())
-                        }
-                        override fun onError(errorMessage: String?) {
-                            cont.resume(null)
-                        }
-                    })
+            withTimeoutOrNull(10_000) {
+                if (Build.VERSION.SDK_INT >= 33) {
+                    suspendCancellableCoroutine { cont ->
+                        geocoder.getFromLocation(lat, lng, 1, object : Geocoder.GeocodeListener {
+                            override fun onGeocode(addresses: MutableList<Address>) {
+                                cont.resume(addresses.firstOrNull())
+                            }
+                            override fun onError(errorMessage: String?) {
+                                cont.resume(null)
+                            }
+                        })
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    geocoder.getFromLocation(lat, lng, 1)?.firstOrNull()
                 }
-            } else {
-                @Suppress("DEPRECATION")
-                geocoder.getFromLocation(lat, lng, 1)?.firstOrNull()
             }
         } catch (e: Exception) {
             null
         }
-        val text = address?.let { a ->
+        return address?.let { a ->
             (0..a.maxAddressLineIndex).joinToString(", ") { a.getAddressLine(it) }
-        }
-        if (!text.isNullOrBlank()) dao.setAddress(pinId, text)
+        }?.takeIf { it.isNotBlank() }
     }
 
     fun undo(pinId: Long) {

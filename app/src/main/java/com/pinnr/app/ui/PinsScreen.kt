@@ -39,6 +39,7 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
     val pins by repo.dao.pinsFor(categoryId).collectAsState(initial = emptyList())
 
     var editingNote by remember { mutableStateOf<Pin?>(null) }
+    var navigating by remember { mutableStateOf<Pin?>(null) }
     var editCategory by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
@@ -125,6 +126,7 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
                         color = Color(cat?.color ?: 0xFF888888.toInt()),
                         onClick = { editingNote = pin },
                         onOpenMap = { openInGoogleMaps(ctx, pin) },
+                        onNavigate = { navigating = pin },
                     )
                 }
             }
@@ -159,6 +161,15 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = { editingNote = null; navigating = pin },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Default.Navigation, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Navigate here")
+                    }
+                    Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = { openInGoogleMaps(ctx, pin) }) {
                             Icon(Icons.Default.Map, null, Modifier.size(18.dp))
@@ -193,6 +204,10 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
             },
             dismissButton = { TextButton(onClick = { editingNote = null }) { Text("Cancel") } },
         )
+    }
+
+    navigating?.let { pin ->
+        NavigateDialog(repo = repo, pin = pin, onDismiss = { navigating = null })
     }
 
     if (editCategory && cat != null) {
@@ -242,6 +257,7 @@ private fun PinCard(
     color: Color,
     onClick: () -> Unit,
     onOpenMap: () -> Unit,
+    onNavigate: () -> Unit,
 ) {
     Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Row(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -267,6 +283,7 @@ private fun PinCard(
                     Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
+            IconButton(onClick = onNavigate) { Icon(Icons.Default.Navigation, "Navigate here") }
             IconButton(onClick = onOpenMap) { Icon(Icons.Default.Map, "Open in Google Maps") }
         }
     }

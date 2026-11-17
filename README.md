@@ -23,6 +23,7 @@ To test without a car, use the [Desktop Head Unit](https://developer.android.com
 ## Using it
 
 - **Phone:** create categories with **New category**, pick a colour, and use the car icon to choose which ones show in the car. Open a category to see pins, add notes, open a pin in your maps app, or drop a pin manually.
+- **Navigate here:** tap the arrow on a pin (or **Navigate here** in its edit screen). Pinnr finds the street address from the pin's GPS, then lets you start turn-by-turn in **Google Maps** or **Waze**. Pick **Exact pin (GPS)** instead if the address lands you at the wrong spot (rural roads, roadside pins).
 - **Car:** tap a tile to pin. A toast confirms it, and **Undo** appears in the top corner for the last pin.
 - Each pin records location, time, GPS accuracy and a street address (looked up in the background).
 

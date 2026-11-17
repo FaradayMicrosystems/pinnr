@@ -5,6 +5,12 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Lets "Navigate here" see whether Google Maps / Waze are installed (Android 11+). -->
+    <queries>
+        <package android:name="com.google.android.apps.maps" />
+        <package android:name="com.waze" />
+    </queries>
+
     <application
         android:name=".PinnrApp"
         android:allowBackup="true"
