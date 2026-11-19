@@ -6,6 +6,8 @@ import androidx.car.app.CarAppService
 import androidx.car.app.Screen
 import androidx.car.app.Session
 import androidx.car.app.validation.HostValidator
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 
 class PinnrCarAppService : CarAppService() {
     override fun createHostValidator(): HostValidator {
@@ -20,6 +22,14 @@ class PinnrCarAppService : CarAppService() {
     }
 
     override fun onCreateSession(): Session = object : Session() {
+        init {
+            // Let the phone hand destinations to the car's nav app while we're connected.
+            lifecycle.addObserver(object : DefaultLifecycleObserver {
+                override fun onCreate(owner: LifecycleOwner) = CarNav.attach(carContext)
+                override fun onDestroy(owner: LifecycleOwner) = CarNav.detach(carContext)
+            })
+        }
+
         override fun onCreateScreen(intent: Intent): Screen = PinGridScreen(carContext)
     }
 }

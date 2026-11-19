@@ -15,6 +15,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import android.widget.Toast
+import com.pinnr.app.car.CarNav
 import com.pinnr.app.data.Pin
 import com.pinnr.app.data.PinRepository
 import java.util.Locale
@@ -31,6 +33,16 @@ private fun isInstalled(ctx: Context, pkg: String): Boolean = try {
     ctx.packageManager.getPackageInfo(pkg, 0); true
 } catch (e: PackageManager.NameNotFoundException) {
     false
+}
+
+/**
+ * Hands the destination to the nav app on the Android Auto screen. Nothing opens on the phone.
+ * Returns false if Android Auto isn't running Pinnr or refused it.
+ */
+fun sendToCar(pin: Pin, address: String?, target: NavTarget): Boolean {
+    val useAddress = target == NavTarget.ADDRESS && !address.isNullOrBlank()
+    return if (useAddress) CarNav.navigate(address!!, isCoords = false)
+    else CarNav.navigate("${pin.lat},${pin.lng}", isCoords = true)
 }
 
 fun startNavigation(ctx: Context, app: NavApp, pin: Pin, address: String?, target: NavTarget) {
@@ -69,6 +81,7 @@ fun NavigateDialog(repo: PinRepository, pin: Pin, onDismiss: () -> Unit) {
     var loading by remember(pin.id) { mutableStateOf(true) }
     var address by remember(pin.id) { mutableStateOf<String?>(null) }
     var target by remember(pin.id) { mutableStateOf(NavTarget.ADDRESS) }
+    val carConnected = remember(pin.id) { CarNav.isConnected }
     LaunchedEffect(pin.id) {
         address = repo.addressFor(pin)
         if (address == null) target = NavTarget.EXACT
@@ -105,7 +118,32 @@ fun NavigateDialog(repo: PinRepository, pin: Pin, onDismiss: () -> Unit) {
                     )
                 }
                 Spacer(Modifier.height(16.dp))
-                Text("Open in", style = MaterialTheme.typography.labelLarge)
+                if (carConnected) {
+                    Button(
+                        onClick = {
+                            onDismiss()
+                            val sent = sendToCar(pin, address, target)
+                            Toast.makeText(
+                                ctx,
+                                if (sent) "Sent to Android Auto" else "Android Auto didn't accept it. Use a button below.",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        },
+                        enabled = !loading,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Default.DirectionsCar, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Send to car")
+                    }
+                    Text(
+                        "Routes in whichever nav app is on your car screen. Your phone stays on Pinnr.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                }
+                Text(if (carConnected) "Or open on phone" else "Open in", style = MaterialTheme.typography.labelLarge)
                 Spacer(Modifier.height(8.dp))
                 NavApp.entries.forEach { app ->
                     val installed = remember(app) { isInstalled(ctx, app.pkg) }
