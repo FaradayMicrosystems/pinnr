@@ -38,6 +38,20 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
     LaunchedEffect(categoryId, reload) { category = repo.dao.category(categoryId) }
     val pins by repo.dao.pinsFor(categoryId).collectAsState(initial = emptyList())
 
+    // Location is taken once when the list opens (not live), then pins are sorted nearest-first.
+    var origin by remember { mutableStateOf<android.location.Location?>(null) }
+    var locating by remember { mutableStateOf(true) }
+    LaunchedEffect(categoryId) {
+        origin = repo.locationForSorting()
+        locating = false
+    }
+    val distances = remember(pins, origin) {
+        origin?.let { o -> pins.associate { it.id to distanceM(o.latitude, o.longitude, it.lat, it.lng) } }
+    }
+    val sortedPins = remember(pins, distances) {
+        distances?.let { d -> pins.sortedBy { d[it.id] } } ?: pins
+    }
+
     var editingNote by remember { mutableStateOf<Pin?>(null) }
     var navigating by remember { mutableStateOf<Pin?>(null) }
     var editCategory by remember { mutableStateOf(false) }
@@ -50,7 +64,22 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text(cat?.name ?: "") },
+                title = {
+                    Column {
+                        Text(cat?.name ?: "")
+                        if (pins.isNotEmpty()) {
+                            Text(
+                                when {
+                                    locating -> "Finding your location…"
+                                    origin != null -> "Nearest first"
+                                    else -> "Newest first (location unavailable)"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
@@ -119,9 +148,10 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
                 contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(pins, key = { it.id }) { pin ->
+                items(sortedPins, key = { it.id }) { pin ->
                     PinCard(
                         pin = pin,
+                        distanceM = distances?.get(pin.id),
                         title = cat?.let { Exporter.pinName(it, pin) } ?: "",
                         color = Color(cat?.color ?: 0xFF888888.toInt()),
                         onClick = { editingNote = pin },
@@ -240,6 +270,18 @@ fun PinsScreen(repo: PinRepository, categoryId: Long, onBack: () -> Unit) {
 
 private val fmt = SimpleDateFormat("EEE d MMM yyyy, HH:mm", Locale.getDefault())
 
+private fun distanceM(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Float {
+    val out = FloatArray(1)
+    android.location.Location.distanceBetween(lat1, lng1, lat2, lng2, out)
+    return out[0]
+}
+
+private fun formatDistance(m: Float): String = when {
+    m < 1_000f -> "${m.toInt()} m away"
+    m < 10_000f -> "%.1f km away".format(Locale.getDefault(), m / 1_000f)
+    else -> "${(m / 1_000f).toInt()} km away"
+}
+
 fun openInGoogleMaps(ctx: android.content.Context, pin: Pin) {
     val url = "https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}"
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).setPackage("com.google.android.apps.maps")
@@ -253,6 +295,7 @@ fun openInGoogleMaps(ctx: android.content.Context, pin: Pin) {
 @Composable
 private fun PinCard(
     pin: Pin,
+    distanceM: Float?,
     title: String,
     color: Color,
     onClick: () -> Unit,
@@ -265,6 +308,10 @@ private fun PinCard(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                distanceM?.let {
+                    Text(formatDistance(it), style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary)
+                }
                 if (pin.name != null) {
                     Text(fmt.format(Date(pin.timestamp)), style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
