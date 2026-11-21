@@ -50,6 +50,28 @@ class PinRepository(private val context: Context) {
         }
     }
 
+    /**
+     * One-off location fix for sorting the pin list by distance. Uses a recent cached fix
+     * when there is one so the list opens fast; null if no permission or no fix.
+     */
+    @SuppressLint("MissingPermission")
+    suspend fun locationForSorting(): Location? {
+        if (!hasLocationPermission()) return null
+        val client = LocationServices.getFusedLocationProviderClient(context)
+        val last = try { client.lastLocation.await() } catch (e: Exception) { null }
+        if (last != null && System.currentTimeMillis() - last.time < 2 * 60_000) return last
+        val cts = CancellationTokenSource()
+        return try {
+            withTimeoutOrNull(8_000) {
+                client.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, cts.token).await()
+            } ?: last
+        } catch (e: Exception) {
+            last
+        } finally {
+            cts.cancel()
+        }
+    }
+
     /** Returns null if called again within 1.5 s (double-tap guard). */
     suspend fun dropPin(categoryId: Long): DropResult? {
         val now = System.currentTimeMillis()
